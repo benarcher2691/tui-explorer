@@ -1,6 +1,6 @@
 [project]
 name = "tui-explorer"
-version = "0.1.0"
+version = "0.1.1"
 description = "A yazi-inspired three-pane terminal file manager built with Textual"
 requires-python = ">=3.14"
 dependencies = [
