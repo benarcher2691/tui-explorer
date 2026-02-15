@@ -3,6 +3,7 @@
 import os
 import shutil
 import stat
+import subprocess
 import pwd
 import grp
 from datetime import datetime
@@ -92,6 +93,38 @@ class InputDialog(ModalScreen[str | None]):
         self.dismiss(self.query_one("#input-field", Input).value.strip())
 
     def key_escape(self) -> None:
+        self.dismiss(None)
+
+
+class MessageDialog(ModalScreen[None]):
+    """Centered dismissible message."""
+
+    DEFAULT_CSS = """
+    MessageDialog {
+        align: center middle;
+    }
+    MessageDialog > Vertical {
+        width: auto;
+        max-width: 60;
+        height: auto;
+        border: thick $warning;
+        background: $surface;
+        padding: 1 2;
+    }
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__()
+        self._message = message
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label(self._message)
+
+    def on_key(self) -> None:
+        self.dismiss(None)
+
+    def on_click(self) -> None:
         self.dismiss(None)
 
 
@@ -417,11 +450,20 @@ class Explorer(App):
         Binding("a", "create", "Create"),
         Binding("r", "rename", "Rename"),
         Binding("shift+d", "delete", "Delete"),
+        Binding("y", "yank_copy", "Yank"),
+        Binding("x", "yank_cut", "Cut"),
+        Binding("p", "paste", "Paste"),
+        Binding("shift+p", "paste_overwrite", "Paste!"),
+        Binding("shift+y,shift+x", "yank_cancel", "Unyank"),
         Binding("q", "quit", "Quit", show=True),
     ]
 
+    editor: str = os.environ.get("EDITOR", "vim")
+
     current_dir: reactive[Path] = reactive(Path.cwd())
     show_hidden: reactive[bool] = reactive(True)
+    _yank_path: Path | None = None
+    _yank_cut: bool = False
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -452,7 +494,11 @@ class Explorer(App):
         entries = file_list.get_entries()
         count_dirs = sum(1 for e in entries if e.is_dir())
         count_files = len(entries) - count_dirs
-        status_bar.text = f" {escape(str(self.current_dir))}  \\[{count_dirs} dirs, {count_files} files]"
+        yank_info = ""
+        if self._yank_path is not None:
+            mode = "cut" if self._yank_cut else "copied"
+            yank_info = f" \\[{mode}: {escape(self._yank_path.name)}]"
+        status_bar.text = f" {escape(str(self.current_dir))}  \\[{count_dirs} dirs, {count_files} files]{yank_info}"
 
     def _update_preview(self) -> None:
         file_list = self.query_one(FileList)
@@ -476,8 +522,28 @@ class Explorer(App):
     def action_enter_dir(self) -> None:
         fl = self.query_one(FileList)
         selected = fl.selected_path()
-        if selected and selected.is_dir():
+        if selected is None:
+            return
+        if selected.is_dir():
             self.current_dir = selected
+        else:
+            self._open_editor(selected)
+
+    def _open_editor(self, path: Path) -> None:
+        if path.suffix.lower() in PreviewPane.BINARY_EXTENSIONS:
+            def on_confirm(confirmed: bool) -> None:
+                if confirmed:
+                    with self.suspend():
+                        subprocess.call([self.editor, str(path)])
+                    self._refresh_view()
+            self.push_screen(
+                ConfirmDialog(f"Binary file ({path.suffix}). Open anyway?"),
+                callback=on_confirm,
+            )
+            return
+        with self.suspend():
+            subprocess.call([self.editor, str(path)])
+        self._refresh_view()
 
     def action_parent_dir(self) -> None:
         parent = self.current_dir.parent
@@ -521,6 +587,60 @@ class Explorer(App):
         fl.refresh()
         self.query_one(PreviewPane).refresh()
         self._sync_all()
+
+    def action_yank_copy(self) -> None:
+        fl = self.query_one(FileList)
+        selected = fl.selected_path()
+        if selected is None:
+            return
+        self._yank_path = selected
+        self._yank_cut = False
+        self._sync_all()
+
+    def action_yank_cut(self) -> None:
+        fl = self.query_one(FileList)
+        selected = fl.selected_path()
+        if selected is None:
+            return
+        self._yank_path = selected
+        self._yank_cut = True
+        self._sync_all()
+
+    def action_yank_cancel(self) -> None:
+        self._yank_path = None
+        self._sync_all()
+
+    def _do_paste(self, overwrite: bool) -> None:
+        if self._yank_path is None:
+            return
+        dest = self.current_dir / self._yank_path.name
+        if dest.exists() and not overwrite:
+            self.push_screen(MessageDialog(f"'{self._yank_path.name}' already exists"))
+            return
+        try:
+            if dest.exists() and overwrite:
+                if dest.is_dir():
+                    shutil.rmtree(dest)
+                else:
+                    dest.unlink()
+            if self._yank_cut:
+                shutil.move(str(self._yank_path), str(dest))
+                self._yank_path = None
+            else:
+                if self._yank_path.is_dir():
+                    shutil.copytree(str(self._yank_path), str(dest))
+                else:
+                    shutil.copy2(str(self._yank_path), str(dest))
+        except Exception as e:
+            self.push_screen(MessageDialog(f"Paste failed: {e}"))
+            return
+        self._refresh_view()
+
+    def action_paste(self) -> None:
+        self._do_paste(overwrite=False)
+
+    def action_paste_overwrite(self) -> None:
+        self._do_paste(overwrite=True)
 
     def action_create(self) -> None:
         def on_result(name: str | None) -> None:
