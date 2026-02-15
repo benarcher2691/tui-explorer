@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  lint-python:
+    name: Python lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - run: uv sync --group dev
+
+      - name: Ruff check
+        run: uv run ruff check .
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      - name: Syntax & import check
+        run: uv run python -c "import py_compile; py_compile.compile('app.py', doraise=True)"
+
+  lint-commits:
+    name: Commit lint
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check commit messages
+        run: |
+          git log --format='%s' origin/${{ github.base_ref }}..HEAD | while read -r msg; do
+            # Must not be empty
+            if [ -z "$msg" ]; then
+              echo "::error::Empty commit message"
+              exit 1
+            fi
+            # Must start with lowercase letter
+            if ! echo "$msg" | grep -qP '^[a-z]'; then
+              echo "::error::Commit message must start lowercase: '$msg'"
+              exit 1
+            fi
+            # Max 72 chars for subject line
+            if [ ${#msg} -gt 72 ]; then
+              echo "::error::Commit subject over 72 chars: '$msg'"
+              exit 1
+            fi
+            echo "OK: $msg"
+          done

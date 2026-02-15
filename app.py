@@ -1,11 +1,11 @@
 """tui-explorer: A yazi-inspired terminal file manager built with Textual."""
 
+import grp
 import os
+import pwd
 import shutil
 import stat
 import subprocess
-import pwd
-import grp
 from datetime import datetime
 from pathlib import Path
 
@@ -29,9 +29,17 @@ def format_size(size: int) -> str:
 
 def format_permissions(mode: int) -> str:
     perms = ""
-    for who in (stat.S_IRUSR, stat.S_IWUSR, stat.S_IXUSR,
-                stat.S_IRGRP, stat.S_IWGRP, stat.S_IXGRP,
-                stat.S_IROTH, stat.S_IWOTH, stat.S_IXOTH):
+    for who in (
+        stat.S_IRUSR,
+        stat.S_IWUSR,
+        stat.S_IXUSR,
+        stat.S_IRGRP,
+        stat.S_IWGRP,
+        stat.S_IXGRP,
+        stat.S_IROTH,
+        stat.S_IWOTH,
+        stat.S_IXOTH,
+    ):
         perms += "rwxrwxrwx"[len(perms)] if mode & who else "-"
     prefix = "d" if stat.S_ISDIR(mode) else "l" if stat.S_ISLNK(mode) else "-"
     return prefix + perms
@@ -317,16 +325,64 @@ class PreviewPane(Widget):
     MAX_LINE_LEN = 200
     MAX_PREVIEW_BYTES = 64 * 1024  # 64 KB
 
-    BINARY_EXTENSIONS = frozenset({
-        ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp", ".tiff", ".tif",
-        ".svg", ".mp3", ".mp4", ".mkv", ".avi", ".mov", ".flac", ".wav", ".ogg",
-        ".webm", ".zip", ".tar", ".gz", ".bz2", ".xz", ".zst", ".7z", ".rar",
-        ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
-        ".so", ".dylib", ".dll", ".exe", ".o", ".a", ".pyc", ".pyo",
-        ".woff", ".woff2", ".ttf", ".otf", ".eot",
-        ".db", ".sqlite", ".sqlite3",
-        ".bin", ".dat", ".iso", ".img",
-    })
+    BINARY_EXTENSIONS = frozenset(
+        {
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+            ".bmp",
+            ".ico",
+            ".webp",
+            ".tiff",
+            ".tif",
+            ".svg",
+            ".mp3",
+            ".mp4",
+            ".mkv",
+            ".avi",
+            ".mov",
+            ".flac",
+            ".wav",
+            ".ogg",
+            ".webm",
+            ".zip",
+            ".tar",
+            ".gz",
+            ".bz2",
+            ".xz",
+            ".zst",
+            ".7z",
+            ".rar",
+            ".pdf",
+            ".doc",
+            ".docx",
+            ".xls",
+            ".xlsx",
+            ".ppt",
+            ".pptx",
+            ".so",
+            ".dylib",
+            ".dll",
+            ".exe",
+            ".o",
+            ".a",
+            ".pyc",
+            ".pyo",
+            ".woff",
+            ".woff2",
+            ".ttf",
+            ".otf",
+            ".eot",
+            ".db",
+            ".sqlite",
+            ".sqlite3",
+            ".bin",
+            ".dat",
+            ".iso",
+            ".img",
+        }
+    )
 
     def render_preview(self) -> str:
         path = self.preview_path
@@ -384,7 +440,7 @@ class PreviewPane(Widget):
 
         # Try reading as text — bail on null bytes (binary)
         try:
-            raw = path.read_bytes()[:self.MAX_PREVIEW_BYTES]
+            raw = path.read_bytes()[: self.MAX_PREVIEW_BYTES]
             if b"\x00" in raw[:1024]:
                 return header + "[dim italic]Binary file[/]"
             text = raw.decode("utf-8", errors="replace")
@@ -531,11 +587,13 @@ class Explorer(App):
 
     def _open_editor(self, path: Path) -> None:
         if path.suffix.lower() in PreviewPane.BINARY_EXTENSIONS:
+
             def on_confirm(confirmed: bool) -> None:
                 if confirmed:
                     with self.suspend():
                         subprocess.call([self.editor, str(path)])
                     self._refresh_view()
+
             self.push_screen(
                 ConfirmDialog(f"Binary file ({path.suffix}). Open anyway?"),
                 callback=on_confirm,
@@ -651,9 +709,7 @@ class Explorer(App):
                     (self.current_dir / name).touch()
                 self._refresh_view()
 
-        self.push_screen(
-            InputDialog("Create (end with / for dir):"), callback=on_result
-        )
+        self.push_screen(InputDialog("Create (end with / for dir):"), callback=on_result)
 
     def action_rename(self) -> None:
         fl = self.query_one(FileList)
@@ -666,9 +722,7 @@ class Explorer(App):
                 selected.rename(self.current_dir / new_name)
                 self._refresh_view()
 
-        self.push_screen(
-            InputDialog("Rename:", default=selected.name), callback=on_result
-        )
+        self.push_screen(InputDialog("Rename:", default=selected.name), callback=on_result)
 
     def action_delete(self) -> None:
         fl = self.query_one(FileList)
@@ -684,9 +738,7 @@ class Explorer(App):
                     selected.unlink()
                 self._refresh_view()
 
-        self.push_screen(
-            ConfirmDialog(f"Delete '{selected.name}'?"), callback=on_result
-        )
+        self.push_screen(ConfirmDialog(f"Delete '{selected.name}'?"), callback=on_result)
 
 
 if __name__ == "__main__":
