@@ -19,7 +19,7 @@ from textual.screen import ModalScreen
 from textual.widget import Widget
 from textual.widgets import Button, Footer, Header, Input, Label
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 
 
 def format_size(size: int) -> str:
