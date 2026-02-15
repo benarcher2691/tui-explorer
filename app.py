@@ -514,11 +514,13 @@ class Explorer(App):
 
     def _refresh_view(self) -> None:
         fl = self.query_one(FileList)
-        self._sync_all()
         entries = fl.get_entries()
         if fl.cursor >= len(entries):
             fl.cursor = max(0, len(entries) - 1)
-        self._update_preview()
+        self.query_one(ParentPane).refresh()
+        fl.refresh()
+        self.query_one(PreviewPane).refresh()
+        self._sync_all()
 
     def action_create(self) -> None:
         def on_result(name: str | None) -> None:
