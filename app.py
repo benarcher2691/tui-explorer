@@ -18,6 +18,8 @@ from textual.screen import ModalScreen
 from textual.widget import Widget
 from textual.widgets import Button, Footer, Header, Input, Label
 
+VERSION = "0.1.0"
+
 
 def format_size(size: int) -> str:
     for unit in ("B", "K", "M", "G", "T"):
@@ -492,7 +494,7 @@ class Explorer(App):
     }
     """
 
-    TITLE = "tui-explorer"
+    TITLE = f"tui-explorer v{VERSION}"
 
     BINDINGS = [
         Binding("j,down", "cursor_down", "Down", show=True),
