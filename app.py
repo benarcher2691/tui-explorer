@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from rich.markup import escape
+from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -243,9 +244,10 @@ class FileList(Widget):
     DEFAULT_CSS = """
     FileList {
         width: 2fr;
-        overflow-y: auto;
     }
     """
+
+    _scroll_top: int = 0
 
     def get_entries(self) -> list[Path]:
         try:
@@ -263,8 +265,18 @@ class FileList(Widget):
         entries = self.get_entries()
         if not entries:
             return "[dim italic]  Empty directory[/]"
+
+        visible = max(1, self.size.height)
+
+        # Keep cursor in view
+        if self.cursor < self._scroll_top:
+            self._scroll_top = self.cursor
+        elif self.cursor >= self._scroll_top + visible:
+            self._scroll_top = self.cursor - visible + 1
+
         lines = []
-        for i, entry in enumerate(entries):
+        for i in range(self._scroll_top, min(self._scroll_top + visible, len(entries))):
+            entry = entries[i]
             try:
                 st = entry.lstat()
                 size = format_size(st.st_size)
@@ -292,6 +304,7 @@ class FileList(Widget):
         return self.render_list()
 
     def watch_current_dir(self) -> None:
+        self._scroll_top = 0
         self.cursor = 0
         self.refresh()
 
@@ -299,6 +312,7 @@ class FileList(Widget):
         self.refresh()
 
     def watch_show_hidden(self) -> None:
+        self._scroll_top = 0
         self.cursor = 0
         self.refresh()
 
@@ -407,7 +421,7 @@ class PreviewPane(Widget):
                 group = str(st.st_gid)
             size = format_size(st.st_size)
             mtime = datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
-            header = f"[dim]{perms}  {owner}:{group}  {size}  {mtime}[/]\n\n"
+            header = f"[dim]{perms}  {escape(owner)}:{escape(group)}  {size}  {mtime}[/]\n\n"
         except OSError:
             header = ""
 
@@ -449,11 +463,13 @@ class PreviewPane(Widget):
             lines = text.splitlines()[: self.MAX_PREVIEW_LINES]
             truncated = [ln[: self.MAX_LINE_LEN] for ln in lines]
             content = "\n".join(truncated)
-            return header + escape(content)
+            result = Text.from_markup(header)
+            result.append(content)
+            return result
         except Exception:
             return header + "[dim italic]Cannot read file[/]"
 
-    def render(self) -> str:
+    def render(self) -> str | Text:
         return self.render_preview()
 
     def watch_preview_path(self) -> None:
