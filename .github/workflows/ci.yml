@@ -37,7 +37,7 @@ jobs:
 
       - name: Check commit messages
         run: |
-          git log --format='%s' origin/${{ github.base_ref }}..HEAD | while read -r msg; do
+          git log --format='%s' --no-merges origin/${{ github.base_ref }}..HEAD | while read -r msg; do
             # Must not be empty
             if [ -z "$msg" ]; then
               echo "::error::Empty commit message"
