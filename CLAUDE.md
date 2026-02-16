@@ -37,3 +37,10 @@ uv run python app.py
 - Binary files are detected by extension using `PreviewPane.BINARY_EXTENSIONS`
 - User-facing warnings/errors use centered `MessageDialog`, not `self.notify()`
 - Destructive actions (delete) use `ConfirmDialog` for confirmation
+
+## Git rules
+
+- No direct pushes to master — always use a feature branch + PR
+- Commit subject must start with a **lowercase** letter
+- Commit subject max **72 characters**
+- Ruff lint must pass (max line length 120)
