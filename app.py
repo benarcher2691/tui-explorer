@@ -17,7 +17,7 @@ from textual.containers import Horizontal, Vertical
 from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widget import Widget
-from textual.widgets import Button, Footer, Header, Input, Label
+from textual.widgets import Button, Header, Input, Label
 
 VERSION = "0.1.1"
 
@@ -234,12 +234,13 @@ class ParentPane(Widget):
         self.refresh()
 
 
-class FileList(Widget):
+class FileList(Widget, can_focus=True):
     """Main pane: lists files in current directory with details."""
 
     current_dir: reactive[Path] = reactive(Path.home())
     cursor: reactive[int] = reactive(0)
     show_hidden: reactive[bool] = reactive(True)
+    filter_text: reactive[str] = reactive("")
 
     DEFAULT_CSS = """
     FileList {
@@ -259,6 +260,8 @@ class FileList(Widget):
             return []
         if not self.show_hidden:
             entries = [e for e in entries if not e.name.startswith(".")]
+        if self.filter_text:
+            entries = [e for e in entries if self.filter_text.lower() in e.name.lower()]
         return entries
 
     def render_list(self) -> str:
@@ -508,6 +511,13 @@ class Explorer(App):
     #panes {
         height: 1fr;
     }
+    #filter-input {
+        display: none;
+        dock: bottom;
+        height: 1;
+        border: none;
+        padding: 0 1;
+    }
     """
 
     TITLE = f"tui-explorer v{VERSION}"
@@ -529,6 +539,7 @@ class Explorer(App):
         Binding("p", "paste", "Paste"),
         Binding("shift+p", "paste_overwrite", "Paste!"),
         Binding("shift+y,shift+x", "yank_cancel", "Unyank"),
+        Binding("slash", "filter", "Filter"),
         Binding("q", "quit", "Quit", show=True),
     ]
 
@@ -538,6 +549,7 @@ class Explorer(App):
     show_hidden: reactive[bool] = reactive(True)
     _yank_path: Path | None = None
     _yank_cut: bool = False
+    _filter_active: bool = False
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -545,11 +557,12 @@ class Explorer(App):
             yield ParentPane()
             yield FileList()
             yield PreviewPane()
+        yield Input(placeholder="Filter...", id="filter-input")
         yield StatusBar()
-        yield Footer()
 
     def on_mount(self) -> None:
         self._sync_all()
+        self.query_one(FileList).focus()
 
     def watch_current_dir(self) -> None:
         self._sync_all()
@@ -557,22 +570,24 @@ class Explorer(App):
     def _sync_all(self) -> None:
         parent_pane = self.query_one(ParentPane)
         file_list = self.query_one(FileList)
-        status_bar = self.query_one(StatusBar)
 
         parent_pane.current_dir = self.current_dir
         parent_pane.show_hidden = self.show_hidden
         file_list.current_dir = self.current_dir
         file_list.show_hidden = self.show_hidden
-        self._update_preview()
 
-        entries = file_list.get_entries()
-        count_dirs = sum(1 for e in entries if e.is_dir())
-        count_files = len(entries) - count_dirs
-        yank_info = ""
-        if self._yank_path is not None:
-            mode = "cut" if self._yank_cut else "copied"
-            yank_info = f" \\[{mode}: {escape(self._yank_path.name)}]"
-        status_bar.text = f" {escape(str(self.current_dir))}  \\[{count_dirs} dirs, {count_files} files]{yank_info}"
+        # Clear filter on directory change
+        file_list.filter_text = ""
+        self._filter_active = False
+        try:
+            filter_input = self.query_one("#filter-input", Input)
+            filter_input.value = ""
+            filter_input.styles.display = "none"
+        except Exception:
+            pass
+
+        self._update_preview()
+        self._update_status()
 
     def _update_preview(self) -> None:
         file_list = self.query_one(FileList)
@@ -741,6 +756,64 @@ class Explorer(App):
                 self._refresh_view()
 
         self.push_screen(InputDialog("Rename:", default=selected.name), callback=on_result)
+
+    def action_filter(self) -> None:
+        filter_input = self.query_one("#filter-input", Input)
+        filter_input.styles.display = "block"
+        self.query_one(StatusBar).styles.display = "none"
+        filter_input.value = self.query_one(FileList).filter_text
+        filter_input.focus()
+        self._filter_active = True
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "filter-input":
+            fl = self.query_one(FileList)
+            fl.filter_text = event.value
+            fl.cursor = 0
+            fl._scroll_top = 0
+            fl.refresh()
+            self._update_preview()
+            self._update_status()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "filter-input":
+            filter_input = self.query_one("#filter-input", Input)
+            filter_input.styles.display = "none"
+            self.query_one(StatusBar).styles.display = "block"
+            self.query_one(FileList).focus()
+
+    def key_escape(self) -> None:
+        if self._filter_active:
+            filter_input = self.query_one("#filter-input", Input)
+            filter_input.styles.display = "none"
+            self.query_one(StatusBar).styles.display = "block"
+            filter_input.value = ""
+            self._filter_active = False
+            fl = self.query_one(FileList)
+            fl.filter_text = ""
+            fl.cursor = 0
+            fl._scroll_top = 0
+            fl.refresh()
+            self.query_one(FileList).focus()
+            self._update_preview()
+            self._update_status()
+
+    def _update_status(self) -> None:
+        fl = self.query_one(FileList)
+        status_bar = self.query_one(StatusBar)
+        entries = fl.get_entries()
+        count_dirs = sum(1 for e in entries if e.is_dir())
+        count_files = len(entries) - count_dirs
+        yank_info = ""
+        if self._yank_path is not None:
+            mode = "cut" if self._yank_cut else "copied"
+            yank_info = f" \\[{mode}: {escape(self._yank_path.name)}]"
+        filter_info = ""
+        if fl.filter_text:
+            filter_info = f" \\[filter: {escape(fl.filter_text)}]"
+        path = escape(str(self.current_dir))
+        counts = f"\\[{count_dirs} dirs, {count_files} files]"
+        status_bar.text = f" {path}  {counts}{yank_info}{filter_info}"
 
     def action_delete(self) -> None:
         fl = self.query_one(FileList)
